@@ -798,7 +798,6 @@ def spec_confuse_wave(
                     src_pos_x[i] != xintercept[i, j]
                     and xintercept[i, j] > src_pos_x[i]
                     and counts[i] > min_spec_counts
-                    and counts[j] > min_spec_confuser_counts
                 ):
                     for k in order_arr:
                         spec_dict[armtype + "+" + str(k)]["wave"][i, j] = np.around(
@@ -819,7 +818,6 @@ def spec_confuse_wave(
                     src_pos_x[i] != xintercept[i, j]
                     and xintercept[i, j] < src_pos_x[i]
                     and counts[i] > min_spec_counts
-                    and counts[j] > min_spec_confuser_counts
                 ):
                     for k in order_arr:
                         spec_dict[armtype + "-" + str(k)]["wave"][i, j] = np.around(
@@ -848,7 +846,6 @@ def spec_confuse_wave(
                     src_pos_x[i] != xintercept[i, j]
                     and xintercept[i, j] < src_pos_x[i]
                     and counts[i] > min_spec_counts
-                    and counts[j] > min_spec_confuser_counts
                 ):
                     for k in order_arr:
                         spec_dict[armtype + "+" + str(k)]["wave"][i, j] = np.around(
@@ -869,7 +866,6 @@ def spec_confuse_wave(
                     src_pos_x[i] != xintercept[i, j]
                     and xintercept[i, j] > src_pos_x[i]
                     and counts[i] > min_spec_counts
-                    and counts[j] > min_spec_confuser_counts
                 ):
                     for k in order_arr:
                         spec_dict[armtype + "-" + str(k)]["wave"][i, j] = np.around(
@@ -1074,6 +1070,8 @@ def spec_flag_set(
     meg_cutoff_high,
     heg_cutoff_low,
     heg_cutoff_high,
+    counts,
+    min_spec_confuser_counts,
 ):
     """
     This function sets the spec_conf[arm+order]['flag'][i,j] for spectral confusion (two arms intersecting). It runs
@@ -1122,6 +1120,7 @@ def spec_flag_set(
         confused source (HEG/MEG cutoff OR OSIP_boundaries )
     996 -- [WARN] confuser from confuser source has occured OUTSIDE the approrpriate range for the confuser source
         (HEG/MEG cutoff of confuser source)
+    997 -- [WARN] confuser spectral source is below threshold set for spectral confusion of min_spec_confuser_counts.
     """
 
     # Calculate number of counts when determining CONFUSER counts in one order compared to CONFUSED counts in another order.
@@ -1184,7 +1183,7 @@ def spec_flag_set(
 
         return (num_counts, avg_ratio_value)
 
-    def spec_id_clean(spec_dict, num_sources, flag_clean, flag_99):
+    def spec_id_clean(spec_dict, num_sources, flag_clean, flag_99, flag_warn,flag_997, counts, min_spec_confuser_counts):
         """
         Identifies the obvious cases where spectra are 'clean' because their arms do not intersect with eachother.
         Modifies spec_dict flag values appropriately and returns spec_dict. This function should always be run before
@@ -1225,6 +1224,11 @@ def spec_flag_set(
                     keys_list
                 ):  # one of the keys is 'intersect' so I can't loop through just keys. I need to make sure I'm just 
                     # looking through the arms (which have subkeys wave and flag)
+
+                    if (
+                        counts[j] < min_spec_confuser_counts
+                    ): #added 5/23/26 to fix bug -- note, doesn't change flag just flag comment
+                        spec_dict[m]["flag_comment"][i, j] = flag_997
 
                     if (
                         spec_dict[m]["wave"][i, j] == 0 or i == j
@@ -1337,8 +1341,8 @@ def spec_flag_set(
                 for n in ["-3", "-2", "-1", "+1", "+2", "+3"]:
 
                     if (
-                        spec_dict[primary_arm + n]["flag_comment"][i, j] != flag_99
-                    ):  # dont run counts_circle_band unless there is at least some evidence of confusion - note I am leaving of 999 here cause there could be a case of confusion near the edges where the osip range brings into the real band
+                        (spec_dict[primary_arm + n]["flag_comment"][i, j] != flag_99 and spec_dict[primary_arm + n]["flag_comment"][i, j] != flag_997)
+                    ):  # dont run counts_circle_band unless there is at least some evidence of confusion - note I am leaving of 999 here cause there could be a case of confusion near the edges where the osip range brings into the real band. Also don't run if confuser is below min threshold counts.
 
                         # if the region in the extracted spectrum where confusion occurs is outside the valid wavelength range then flag as warning and continue
 
@@ -1641,7 +1645,7 @@ def spec_flag_set(
     flag_981 = ",confuser_has_0_disp_counts_in_order_"
     flag_985 = ",confusion_smaller_than_conf_ratio_by_order_"
     flag_986 = ",confusion_above_conf_ratio_by_order_"
-
+    flag_997 = ",confuser_below_min_spec_confuser_counts par"
     #######################
 
     # Flag the unconfused (clean) spectra as clean. This must be run before spec_id_confusion().
@@ -1650,6 +1654,10 @@ def spec_flag_set(
         num_sources=len(src_pos_x_par),
         flag_clean=flag_clean,
         flag_99=flag_99,
+        flag_warn=flag_warn,
+        flag_997=flag_997,
+        counts=counts,
+        min_spec_confuser_counts=min_spec_confuser_counts
     )
 
     # Identify where confusion can occur and flag appropriately. This must be run AFTER spec_id_clean()
@@ -4473,6 +4481,8 @@ def run_crisscross(
             heg_cutoff_high=heg_cutoff_high,
             meg_cutoff_low=meg_cutoff_low,
             meg_cutoff_high=meg_cutoff_high,
+            counts = counts,
+            min_spec_confuser_counts=min_spec_confuser_counts
         )
 
         time_message = "Finished assigning spectral confusion."
